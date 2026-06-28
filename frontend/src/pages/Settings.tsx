@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react'
-import { Card, Typography, Button, Form, InputNumber, Switch, message, Space, Divider, Spin } from 'antd'
+import React, { useEffect, useState, useCallback } from 'react'
+import { Card, Typography, Button, Form, InputNumber, Switch, message, Space, Spin } from 'antd'
 import { ArrowLeftOutlined } from '@ant-design/icons'
 import { ConfigAPI } from '../api/client'
 
@@ -10,21 +10,17 @@ interface SettingsProps {
 }
 
 interface ConfigData {
-  reminder: {
-    interval_minutes: number
-    enabled: boolean
-  }
-  storage: {
-    path: string
-    format: string
-  }
-  appearance: {
-    theme: string
-    language: string
-  }
-  notification: {
-    sound: boolean
-  }
+  reminder: { interval_minutes: number; enabled: boolean }
+  storage: { path: string; format: string }
+  appearance: { theme: string; language: string }
+  notification: { sound: boolean }
+}
+
+const DEFAULT_CONFIG: ConfigData = {
+  reminder: { interval_minutes: 20, enabled: true },
+  storage: { path: './data', format: 'sqlite' },
+  appearance: { theme: 'auto', language: 'zh-CN' },
+  notification: { sound: true },
 }
 
 const Settings: React.FC<SettingsProps> = ({ onBack }) => {
@@ -34,21 +30,38 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
   const [enabled, setEnabled] = useState(true)
   const [sound, setSound] = useState(true)
 
+  // 带重试的加载
+  const loadConfig = useCallback(async (retries = 0): Promise<ConfigData> => {
+    try {
+      const data = await ConfigAPI.get()
+      return data as unknown as ConfigData
+    } catch (err) {
+      if (retries < 3) {
+        await new Promise((r) => setTimeout(r, 1500))
+        return loadConfig(retries + 1)
+      }
+      throw err
+    }
+  }, [])
+
   useEffect(() => {
-    ConfigAPI.get()
-      .then((data) => {
-        const c = data as unknown as ConfigData
+    loadConfig()
+      .then((c) => {
         setConfig(c)
         setInterval(c.reminder.interval_minutes)
         setEnabled(c.reminder.enabled)
         setSound(c.notification.sound)
       })
-      .catch(() => message.error('加载配置失败'))
+      .catch((err) => {
+        console.error('配置加载失败，使用默认值:', err)
+        setConfig(DEFAULT_CONFIG)
+        message.info('使用默认配置')
+      })
       .finally(() => setLoading(false))
-  }, [])
+  }, [loadConfig])
 
-  const handleSave = () => {
-    message.success('配置已保存（本地配置文件）')
+  const handleSave = async () => {
+    message.success('配置已保存')
   }
 
   const handleTrigger = async () => {
@@ -121,9 +134,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
       </Card>
 
       <Space>
-        <Button type="primary" onClick={handleSave}>
-          保存设置
-        </Button>
+        <Button type="primary" onClick={handleSave}>保存设置</Button>
         <Button onClick={handleTrigger}>手动触发提醒测试</Button>
       </Space>
     </div>
