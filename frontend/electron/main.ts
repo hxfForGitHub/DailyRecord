@@ -2,10 +2,10 @@
  * Electron 主进程
  *
  * 负责：
- * 1. 拉起 Python 后端进程
- * 2. 创建/管理窗口
- * 3. 处理 macOS 原生通知
- * 4. 管理菜单栏图标
+ * 1. 创建/管理窗口（主窗口 + 记录窗口）
+ * 2. macOS 原生通知
+ * 3. 菜单栏驻留图标
+ * 4. Python 后端进程管理
  */
 
 import { app, BrowserWindow, ipcMain, Notification, Tray, Menu, nativeImage } from 'electron'
@@ -13,78 +13,84 @@ import { spawn, ChildProcess } from 'child_process'
 import path from 'path'
 
 let mainWindow: BrowserWindow | null = null
+let recordWindow: BrowserWindow | null = null
 let pythonProcess: ChildProcess | null = null
 let tray: Tray | null = null
 let isQuitting = false
 
 const BACKEND_PORT = 8765
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`
-const isDev = process.env.NODE_ENV === 'development'
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
-function getPythonPath(): string {
-  if (isDev) {
-    // 开发模式：使用 venv 中的 Python
-    return path.join(__dirname, '..', '..', 'venv', 'bin', 'python3')
-  }
-  // 生产模式：使用 PyInstaller 打包的二进制
-  return path.join(process.resourcesPath, 'backend', 'dailyrecord-backend')
-}
+// ========== Python 后端管理 ==========
 
-function getBackendDir(): string {
+function getProjectRoot(): string {
   if (isDev) {
-    return path.join(__dirname, '..', '..', 'backend')
+    return path.resolve(__dirname, '..', '..')
   }
-  return path.join(process.resourcesPath, 'backend')
+  return process.resourcesPath
 }
 
 function startPythonBackend(): void {
-  const pythonPath = getPythonPath()
-  const backendDir = getBackendDir()
-  const mainPy = path.join(backendDir, 'main.py')
+  const root = getProjectRoot()
+  const pythonPath = path.join(root, 'venv', 'bin', 'python3')
+  const mainPy = path.join(root, 'backend', 'main.py')
 
   console.log(`[Electron] 启动后端: ${pythonPath} ${mainPy}`)
 
-  if (isDev) {
-    pythonProcess = spawn(pythonPath, [mainPy], {
-      cwd: path.join(__dirname, '..', '..'),
-      env: { ...process.env, PYTHONUNBUFFERED: '1' },
-    })
-  } else {
-    pythonProcess = spawn(pythonPath, [], {
-      cwd: backendDir,
-      env: { ...process.env, PYTHONUNBUFFERED: '1' },
-    })
-  }
+  pythonProcess = spawn(pythonPath, ['-m', 'backend.main'], {
+    cwd: root,
+    env: { ...process.env, PYTHONUNBUFFERED: '1', NO_COLOR: '1' },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
 
   pythonProcess.stdout?.on('data', (data: Buffer) => {
-    console.log(`[Backend] ${data.toString().trim()}`)
+    const msg = data.toString().trim()
+    if (msg) console.log(`[Backend] ${msg}`)
   })
 
   pythonProcess.stderr?.on('data', (data: Buffer) => {
-    console.error(`[Backend Error] ${data.toString().trim()}`)
+    const msg = data.toString().trim()
+    if (msg && !msg.includes('INFO') && !msg.includes('WARNING')) {
+      console.error(`[Backend] ${msg}`)
+    }
   })
 
   pythonProcess.on('error', (err) => {
-    console.error('[Electron] 后端启动失败:', err.message)
+    console.error(`[Electron] 后端启动失败: ${err.message}`)
+    // 开发模式下不自动重启，方便调试
+    if (!isDev) {
+      setTimeout(startPythonBackend, 5000)
+    }
   })
 
   pythonProcess.on('exit', (code) => {
     console.log(`[Electron] 后端已退出 (code: ${code})`)
-    if (!isQuitting) {
-      console.log('[Electron] 3秒后重启后端...')
-      setTimeout(startPythonBackend, 3000)
-    }
   })
 }
 
-function createWindow(): void {
+function stopPythonBackend(): void {
+  if (pythonProcess) {
+    pythonProcess.kill('SIGTERM')
+    setTimeout(() => {
+      if (pythonProcess) {
+        pythonProcess.kill('SIGKILL')
+        pythonProcess = null
+      }
+    }, 3000)
+  }
+}
+
+// ========== 窗口管理 ==========
+
+function createMainWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 750,
     minWidth: 800,
     minHeight: 600,
     title: 'DailyRecord',
-    titleBarStyle: 'hiddenInset', // macOS 融合标题栏
+    titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -93,18 +99,18 @@ function createWindow(): void {
     show: false,
   })
 
-  // 窗口准备好后显示（避免白屏闪烁）
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
   })
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
-    mainWindow.webContents.openDevTools()
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
 
+  // 关闭时隐藏而非退出（驻留菜单栏）
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
       event.preventDefault()
@@ -113,18 +119,57 @@ function createWindow(): void {
   })
 }
 
+function createRecordWindow(data?: { task_name?: string }): void {
+  if (recordWindow && !recordWindow.isDestroyed()) {
+    recordWindow.focus()
+    return
+  }
+
+  recordWindow = new BrowserWindow({
+    width: 640,
+    height: 580,
+    resizable: false,
+    title: '记录当前工作',
+    titleBarStyle: 'hiddenInset',
+    center: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    show: false,
+  })
+
+  recordWindow.once('ready-to-show', () => {
+    recordWindow?.show()
+  })
+
+  const url = isDev
+    ? `http://localhost:5173/#/record${data?.task_name ? `?task=${encodeURIComponent(data.task_name)}` : ''}`
+    : `file://${path.join(__dirname, '..', 'dist', 'index.html')}#/record`
+
+  recordWindow.loadURL(url)
+
+  recordWindow.on('closed', () => {
+    recordWindow = null
+  })
+}
+
+// ========== 菜单栏图标 ==========
+
 function createTray(): void {
-  // 创建简单的 16x16 菜单栏图标
-  const icon = nativeImage.createEmpty()
+  // 16x16 透明图标（使用系统内置图标）
+  const icon = nativeImage.createFromBuffer(
+    Buffer.alloc(32 * 32 * 4, 0),
+    { width: 32, height: 32 }
+  )
+
   tray = new Tray(icon)
 
   const contextMenu = Menu.buildFromTemplate([
     {
       label: '打开 DailyRecord',
-      click: () => {
-        mainWindow?.show()
-        mainWindow?.focus()
-      },
+      click: () => mainWindow?.show() || createMainWindow(),
     },
     { type: 'separator' },
     {
@@ -138,53 +183,52 @@ function createTray(): void {
 
   tray.setToolTip('DailyRecord')
   tray.setContextMenu(contextMenu)
-
-  tray.on('click', () => {
-    mainWindow?.show()
-    mainWindow?.focus()
-  })
+  tray.on('click', () => mainWindow?.show() || createMainWindow())
 }
 
-// 处理 macOS 通知
-ipcMain.on('show-notification', (_event, data: { title: string; body: string }) => {
+// ========== IPC 处理器 ==========
+
+ipcMain.handle('get-backend-url', () => BACKEND_URL)
+
+ipcMain.on('show-notification', (_event, data: { title?: string; body?: string }) => {
   const notification = new Notification({
     title: data.title || 'DailyRecord',
     body: data.body || '',
   })
 
   notification.on('click', () => {
-    // 点击通知 -> 打开记录窗口
-    mainWindow?.webContents.send('notification-clicked', {
-      action: 'fill',
-    })
     mainWindow?.show()
     mainWindow?.focus()
+    // 通知主窗口弹起记录窗口
+    mainWindow?.webContents.send('open-record-window')
   })
 
   notification.show()
 })
 
-// 处理 IPC 调用
-ipcMain.handle('get-backend-url', () => {
-  return BACKEND_URL
+ipcMain.on('open-main-window', () => {
+  mainWindow?.show()
+  mainWindow?.focus()
 })
 
-// macOS 退出处理
+ipcMain.on('minimize-to-tray', () => {
+  mainWindow?.hide()
+})
+
+// ========== 应用生命周期 ==========
+
 app.on('before-quit', () => {
   isQuitting = true
 })
 
 app.whenReady().then(() => {
-  // 启动 Python 后端
   startPythonBackend()
-
-  // 创建主窗口
-  createWindow()
+  createMainWindow()
   createTray()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+      createMainWindow()
     } else {
       mainWindow?.show()
     }
@@ -198,8 +242,5 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
-  if (pythonProcess) {
-    pythonProcess.kill('SIGTERM')
-    pythonProcess = null
-  }
+  stopPythonBackend()
 })

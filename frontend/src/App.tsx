@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { ConfigProvider, Layout, theme as antTheme } from 'antd'
+import { ConfigProvider, Layout } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
@@ -8,21 +8,56 @@ import { wsClient } from './api/websocket'
 
 const { Content } = Layout
 
-type Page = 'dashboard' | 'settings' | 'record'
+const isElectron = !!window.electronAPI
+
+function getHashPage(): string {
+  return window.location.hash.replace('#/', '').split('?')[0] || 'dashboard'
+}
 
 const App: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<Page>('dashboard')
+  const [currentPage, setCurrentPage] = useState<string>(getHashPage())
   const [reminderVisible, setReminderVisible] = useState(false)
   const [reminderMessage, setReminderMessage] = useState('')
+
+  // 同步 hash 变化
+  useEffect(() => {
+    const onHashChange = () => setCurrentPage(getHashPage())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
+  // 切换页面时更新 hash
+  const navigate = (page: string) => {
+    setCurrentPage(page)
+    window.location.hash = `#/${page}`
+  }
 
   // 连接 WebSocket 接收提醒
   useEffect(() => {
     wsClient.connect()
 
     const unsubReminder = wsClient.on('reminder', (data) => {
-      setReminderMessage((data.message as string) || '时间到啦，记录一下当前在做什么？')
-      setReminderVisible(true)
+      const msg = (data.message as string) || '时间到啦，记录一下当前在做什么？'
+      setReminderMessage(msg)
+
+      if (isElectron) {
+        // Electron 模式：弹出 macOS 原生通知
+        window.electronAPI!.showNotification({
+          title: 'DailyRecord',
+          body: msg,
+        })
+      } else {
+        // Web 模式：显示页面内弹窗
+        setReminderVisible(true)
+      }
     })
+
+    // 监听 Electron 通知点击 -> 打开记录窗口
+    if (isElectron) {
+      window.electronAPI!.onOpenRecordWindow(() => {
+        navigate('record')
+      })
+    }
 
     return () => {
       unsubReminder()
@@ -30,28 +65,25 @@ const App: React.FC = () => {
     }
   }, [])
 
-  // 从记录窗口返回时
   const handleRecordClose = () => {
     setReminderVisible(false)
-    setCurrentPage('dashboard')
+    navigate('dashboard')
   }
 
-  // 页面渲染
   const renderPage = () => {
     switch (currentPage) {
-      case 'dashboard':
-        return (
-          <Dashboard
-            onOpenRecord={() => setCurrentPage('record')}
-            onOpenSettings={() => setCurrentPage('settings')}
-          />
-        )
-      case 'settings':
-        return <Settings onBack={() => setCurrentPage('dashboard')} />
       case 'record':
         return <RecordWindow onClose={handleRecordClose} message={reminderMessage} />
+      case 'settings':
+        return <Settings onBack={() => navigate('dashboard')} />
+      case 'dashboard':
       default:
-        return null
+        return (
+          <Dashboard
+            onOpenRecord={() => navigate('record')}
+            onOpenSettings={() => navigate('settings')}
+          />
+        )
     }
   }
 
@@ -69,8 +101,8 @@ const App: React.FC = () => {
     >
       <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
         <Content>{renderPage()}</Content>
-        {/* 提醒弹窗 - 悬浮在页面右上角 */}
-        {reminderVisible && currentPage !== 'record' && (
+        {/* Web 模式提醒弹窗 */}
+        {!isElectron && reminderVisible && currentPage !== 'record' && (
           <div className="fade-in" style={{
             position: 'fixed',
             top: 20,
@@ -109,9 +141,7 @@ const App: React.FC = () => {
               </button>
               <button
                 className="no-drag"
-                onClick={() => {
-                  setCurrentPage('record')
-                }}
+                onClick={() => navigate('record')}
                 style={{
                   padding: '6px 16px',
                   borderRadius: 6,
