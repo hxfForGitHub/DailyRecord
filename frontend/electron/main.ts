@@ -34,6 +34,11 @@ function getProjectRoot(): string {
 function startPythonBackend(): void {
   const root = getProjectRoot()
 
+  const env = {
+    ...process.env,
+    PYTHONUNBUFFERED: '1',
+  } as NodeJS.ProcessEnv
+
   if (isDev) {
     // 开发模式：使用 venv Python 运行源码
     const pythonPath = path.join(root, 'venv', 'bin', 'python3')
@@ -41,17 +46,25 @@ function startPythonBackend(): void {
 
     pythonProcess = spawn(pythonPath, ['-m', 'backend.main'], {
       cwd: root,
-      env: { ...process.env, PYTHONUNBUFFERED: '1' },
+      env,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
   } else {
     // 生产模式：使用 PyInstaller 打包的独立二进制
+    // resourcePath = /Applications/DailyRecord.app/Contents/Resources
     const backendBin = path.join(root, 'backend', 'dailyrecord-backend')
+    const resourcesPath = root
+
+    // 将资源路径和 config.yaml 路径传给后端
+    env.DAILYRECORD_RESOURCES_PATH = resourcesPath
+    env.DAILYRECORD_CONFIG_PATH = path.join(resourcesPath, 'config.yaml')
+
     console.log(`[Electron] 生产模式启动后端: ${backendBin}`)
+    console.log(`[Electron] 资源路径: ${resourcesPath}`)
 
     pythonProcess = spawn(backendBin, [], {
       cwd: path.dirname(backendBin),
-      env: { ...process.env },
+      env,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
   }

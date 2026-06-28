@@ -12,6 +12,10 @@
     {
       "from": "../backend/dist",
       "to": "backend"
+    },
+    {
+      "from": "../config.yaml",
+      "to": "config.yaml"
     }
   ],
   "mac": {
@@ -33,6 +37,5 @@
       "width": 540,
       "height": 440
     }
-  },
-  "afterSign": null
+  }
 }

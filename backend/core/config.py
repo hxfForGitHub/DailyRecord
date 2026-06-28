@@ -9,16 +9,24 @@ class Settings:
     """应用配置，从 config.yaml 加载"""
 
     def __init__(self, config_path: Optional[str] = None):
-        if config_path is None:
-            # 默认：程序运行目录下的 config.yaml
-            config_path = os.path.join(self._find_project_root(), "config.yaml")
+        if config_path is not None:
+            self._config_path = config_path
+        else:
+            # 环境变量 > 默认查找
+            env_config = os.environ.get("DAILYRECORD_CONFIG_PATH")
+            env_resources = os.environ.get("DAILYRECORD_RESOURCES_PATH")
 
-        self._config_path = config_path
+            if env_config and os.path.exists(env_config):
+                self._config_path = env_config
+            elif env_resources and os.path.exists(os.path.join(env_resources, "config.yaml")):
+                self._config_path = os.path.join(env_resources, "config.yaml")
+            else:
+                self._config_path = os.path.join(self._find_project_root(), "config.yaml")
+
         self._data = self._load_config()
 
     def _find_project_root(self) -> str:
         """找到项目根目录（包含 config.yaml 的目录）"""
-        # 从当前文件位置向上查找
         current = os.path.dirname(os.path.abspath(__file__))
         for _ in range(5):
             if os.path.exists(os.path.join(current, "config.yaml")):
@@ -34,7 +42,7 @@ class Settings:
                 "enabled": True,
             },
             "storage": {
-                "path": "./data",
+                "path": self._default_data_path(),
                 "format": "sqlite",
             },
             "appearance": {
@@ -50,6 +58,17 @@ class Settings:
                 user_config = yaml.safe_load(f) or {}
             self._deep_merge(defaults, user_config)
         return defaults
+
+    @staticmethod
+    def _default_data_path() -> str:
+        """获取默认数据存储路径"""
+        # 生产模式：使用 ~/Library/Application Support/DailyRecord/
+        if os.environ.get("DAILYRECORD_RESOURCES_PATH"):
+            app_support = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "DailyRecord")
+            os.makedirs(app_support, exist_ok=True)
+            return app_support
+        # 开发模式：项目目录下的 data/
+        return "./data"
 
     @staticmethod
     def _deep_merge(base: dict, override: dict):
