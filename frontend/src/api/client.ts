@@ -115,6 +115,11 @@ export const RecordAPI = {
 
 export const ConfigAPI = {
   get: () => request<Record<string, unknown>>('/api/config'),
+  update: (data: { reminder_interval?: number; reminder_enabled?: boolean; notification_sound?: boolean }) =>
+    request<{ message: string; config: Record<string, unknown> }>('/api/config', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
   health: () => request<{ status: string }>('/api/health'),
   triggerReminder: () =>
     request<{ message: string }>('/api/config/reminder/trigger', {

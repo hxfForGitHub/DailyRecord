@@ -1,6 +1,5 @@
 """定时调度器"""
 
-from datetime import datetime
 from typing import Callable, Optional
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -13,17 +12,17 @@ class ReminderScheduler:
     """提醒定时调度器"""
 
     def __init__(self):
-        self._scheduler = BackgroundScheduler()
+        self._scheduler: Optional[BackgroundScheduler] = None
         self._callback: Optional[Callable] = None
         self._job = None
 
     def set_callback(self, callback: Callable):
-        """设置提醒触发回调"""
         self._callback = callback
 
     def start(self):
         """启动调度器"""
-        if not self._scheduler.running:
+        if self._scheduler is None or not self._scheduler.running:
+            self._scheduler = BackgroundScheduler()
             self._scheduler.start()
 
         interval = settings.reminder_interval
@@ -38,23 +37,32 @@ class ReminderScheduler:
                 misfire_grace_time=120,
             )
             print(f"[Scheduler] 提醒已启动，间隔: {interval} 分钟")
+        else:
+            print(f"[Scheduler] 提醒未启用")
 
     def stop(self):
         """停止调度器"""
         if self._job:
-            self._job.remove()
+            try:
+                self._job.remove()
+            except Exception:
+                pass
             self._job = None
-        if self._scheduler.running:
-            self._scheduler.shutdown(wait=False)
+        if self._scheduler and self._scheduler.running:
+            try:
+                self._scheduler.shutdown(wait=False)
+            except Exception:
+                pass
+            self._scheduler = None
             print("[Scheduler] 调度器已停止")
 
     def restart(self):
         """重启调度器（配置变更后调用）"""
+        print("[Scheduler] 重启调度器...")
         self.stop()
         self.start()
 
-    def trigger_now(self):
-        """手动触发一次提醒"""
+    def trigger_now(self) -> bool:
         if self._callback:
             self._callback()
             return True
@@ -62,4 +70,4 @@ class ReminderScheduler:
 
     @property
     def is_running(self) -> bool:
-        return self._scheduler.running and self._job is not None
+        return self._scheduler is not None and self._scheduler.running and self._job is not None

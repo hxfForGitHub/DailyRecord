@@ -61,7 +61,16 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
   }, [loadConfig])
 
   const handleSave = async () => {
-    message.success('配置已保存')
+    try {
+      await ConfigAPI.update({
+        reminder_interval: interval,
+        reminder_enabled: enabled,
+        notification_sound: sound,
+      })
+      message.success('配置已保存，调度器已重新启动')
+    } catch {
+      message.error('保存失败')
+    }
   }
 
   const handleTrigger = async () => {
