@@ -6,6 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from backend.core.config import settings
+from backend.core.logger import logger
 
 
 class ReminderScheduler:
@@ -36,9 +37,9 @@ class ReminderScheduler:
                 replace_existing=True,
                 misfire_grace_time=120,
             )
-            print(f"[Scheduler] 提醒已启动，间隔: {interval} 分钟")
+            logger.info(f"提醒已启动，间隔: {interval} 分钟")
         else:
-            print(f"[Scheduler] 提醒未启用")
+            logger.info("提醒未启用")
 
     def stop(self):
         """停止调度器"""

@@ -1,7 +1,4 @@
-"""DailyRecord 后端入口
-
-启动 FastAPI 服务，初始化数据库和定时调度器。
-"""
+"""DailyRecord 后端入口"""
 
 import json
 import asyncio
@@ -15,9 +12,9 @@ from pydantic import BaseModel
 from backend.storage.db import init_db, close_db
 from backend.core.scheduler import ReminderScheduler
 from backend.core.config import settings
+from backend.core.logger import logger
 
 
-# 全局实例
 scheduler = ReminderScheduler()
 connected_websockets = set()
 _event_loop: asyncio.AbstractEventLoop | None = None
@@ -30,7 +27,7 @@ def broadcast_message(message: dict):
         return
     disconnected = set()
     message_str = json.dumps(message, ensure_ascii=False)
-    for ws in connected_websockets:
+    for ws in list(connected_websockets):
         try:
             asyncio.run_coroutine_threadsafe(ws.send_text(message_str), loop)
         except Exception:
@@ -41,7 +38,7 @@ def broadcast_message(message: dict):
 def on_reminder_trigger():
     """提醒触发回调"""
     now = datetime.now().strftime("%H:%M:%S")
-    print(f"[Reminder] {now} 提醒触发")
+    logger.info(f"提醒触发 [{now}]")
     broadcast_message({
         "type": "reminder",
         "message": "时间到啦，记录一下当前在做什么？",
@@ -51,22 +48,21 @@ def on_reminder_trigger():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期管理"""
     global _event_loop
     _event_loop = asyncio.get_event_loop()
 
-    print("[App] 正在初始化...")
+    logger.info("正在初始化...")
     init_db()
-    print("[App] 数据库已初始化")
+    logger.info("数据库已初始化")
 
     scheduler.set_callback(on_reminder_trigger)
     scheduler.start()
 
-    print(f"[App] DailyRecord 后端已启动 | 端口: 8765 | 提醒间隔: {settings.reminder_interval} 分钟")
+    logger.info(f"后端已启动 | 端口: 8765 | 提醒间隔: {settings.reminder_interval} 分钟")
     yield
     scheduler.stop()
     close_db()
-    print("[App] 已关闭")
+    logger.info("已关闭")
 
 
 app = FastAPI(title="DailyRecord", version="0.1.0", lifespan=lifespan)
@@ -101,7 +97,6 @@ def health_check():
 
 @app.get("/api/config")
 def get_config():
-    """获取配置"""
     return settings.to_dict()
 
 
@@ -114,9 +109,10 @@ class ConfigUpdate(BaseModel):
 @app.put("/api/config")
 def update_config(data: ConfigUpdate):
     """更新配置"""
+    logger.info(f"收到配置更新请求: {data.model_dump(exclude_none=True)}")
     changed = False
     if data.reminder_interval is not None and data.reminder_interval != settings.reminder_interval:
-        settings._data["reminder"]["interval_minutes"] = data.reminder_interval
+        settings.reminder_interval = data.reminder_interval
         changed = True
     if data.reminder_enabled is not None and data.reminder_enabled != settings.reminder_enabled:
         settings._data["reminder"]["enabled"] = data.reminder_enabled
@@ -125,7 +121,12 @@ def update_config(data: ConfigUpdate):
         settings._data["notification"]["sound"] = data.notification_sound
         changed = True
 
-    settings.save()
+    try:
+        settings.save()
+        logger.info(f"配置已写入文件: {settings._config_path}")
+    except Exception as e:
+        logger.error(f"配置文件写入失败: {e}")
+        return {"error": f"配置写入失败: {e}"}
 
     if changed:
         scheduler.restart()
@@ -135,7 +136,6 @@ def update_config(data: ConfigUpdate):
 
 @app.post("/api/config/reminder/trigger")
 def trigger_reminder():
-    """手动触发提醒"""
     on_reminder_trigger()
     return {"message": "已触发提醒"}
 
@@ -144,7 +144,6 @@ def trigger_reminder():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket 连接（用于向 Electron 推送提醒）"""
     await websocket.accept()
     connected_websockets.add(websocket)
     try:
@@ -155,7 +154,7 @@ async def websocket_endpoint(websocket: WebSocket):
             if action == "skip":
                 from backend.storage.repository import RecordRepository
                 RecordRepository.create(task_name="", status="skipped", note="本次跳过")
-                print(f"[WebSocket] 用户选择跳过本次记录")
+                logger.info("用户选择跳过本次记录")
             elif action == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
     except WebSocketDisconnect:
@@ -167,10 +166,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8765):
-    """启动服务器"""
     import uvicorn
-    print(f"[App] 启动服务在 {host}:{port}")
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    logger.info(f"启动服务在 {host}:{port}")
+    uvicorn.run(app, host=host, port=port, log_level="error")
 
 
 if __name__ == "__main__":

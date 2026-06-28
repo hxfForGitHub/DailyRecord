@@ -1,78 +1,83 @@
 """配置管理"""
 
 import os
+import shutil
 import yaml
-from typing import Optional
+
+from backend.core.logger import logger
+
+
+def _app_support_dir() -> str:
+    """获取用户可写数据目录"""
+    path = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "DailyRecord")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _is_production() -> bool:
+    """是否生产模式（PyInstaller 打包）"""
+    return bool(os.environ.get("DAILYRECORD_RESOURCES_PATH"))
+
+
+def _resolve_config_path() -> str:
+    """确定配置文件路径（生产模式优先用可写路径）"""
+    # 生产模式：优先用 ~/Library/Application Support/DailyRecord/config.yaml
+    if _is_production():
+        writable_path = os.path.join(_app_support_dir(), "config.yaml")
+        bundled_path = os.environ.get("DAILYRECORD_CONFIG_PATH", "")
+
+        # 首次启动：把 app 内的配置复制到可写目录
+        if not os.path.exists(writable_path) and bundled_path and os.path.exists(bundled_path):
+            try:
+                shutil.copy(bundled_path, writable_path)  # copy（非 copy2）不保留权限
+                os.chmod(writable_path, 0o644)  # 确保可写
+                logger.info(f"配置文件已从 {bundled_path} 复制到 {writable_path}")
+            except Exception as e:
+                logger.warning(f"配置文件复制失败: {e}")
+
+        return writable_path
+
+    # 开发模式：项目目录下的 config.yaml
+    current = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(5):
+        if os.path.exists(os.path.join(current, "config.yaml")):
+            return os.path.join(current, "config.yaml")
+        current = os.path.dirname(current)
+    return os.path.join(os.getcwd(), "config.yaml")
 
 
 class Settings:
-    """应用配置，从 config.yaml 加载"""
+    """应用配置"""
 
-    def __init__(self, config_path: Optional[str] = None):
-        if config_path is not None:
-            self._config_path = config_path
-        else:
-            # 环境变量 > 默认查找
-            env_config = os.environ.get("DAILYRECORD_CONFIG_PATH")
-            env_resources = os.environ.get("DAILYRECORD_RESOURCES_PATH")
-
-            if env_config and os.path.exists(env_config):
-                self._config_path = env_config
-            elif env_resources and os.path.exists(os.path.join(env_resources, "config.yaml")):
-                self._config_path = os.path.join(env_resources, "config.yaml")
-            else:
-                self._config_path = os.path.join(self._find_project_root(), "config.yaml")
-
+    def __init__(self):
+        self._config_path = _resolve_config_path()
         self._data = self._load_config()
-
-    def _find_project_root(self) -> str:
-        """找到项目根目录（包含 config.yaml 的目录）"""
-        current = os.path.dirname(os.path.abspath(__file__))
-        for _ in range(5):
-            if os.path.exists(os.path.join(current, "config.yaml")):
-                return current
-            current = os.path.dirname(current)
-        return os.getcwd()
+        logger.info(f"配置加载完成: {self._config_path}")
 
     def _load_config(self) -> dict:
-        """加载配置文件"""
         defaults = {
-            "reminder": {
-                "interval_minutes": 20,
-                "enabled": True,
-            },
-            "storage": {
-                "path": self._default_data_path(),
-                "format": "sqlite",
-            },
-            "appearance": {
-                "theme": "auto",
-                "language": "zh-CN",
-            },
-            "notification": {
-                "sound": True,
-            },
+            "reminder": {"interval_minutes": 20, "enabled": True},
+            "storage": {"path": self._default_data_path(), "format": "sqlite"},
+            "appearance": {"theme": "auto", "language": "zh-CN"},
+            "notification": {"sound": True},
         }
         if os.path.exists(self._config_path):
             with open(self._config_path, "r", encoding="utf-8") as f:
                 user_config = yaml.safe_load(f) or {}
             self._deep_merge(defaults, user_config)
+        # 生产模式：强制存储路径使用可写目录（config.yaml 中的路径不适用）
+        if _is_production():
+            defaults["storage"]["path"] = _app_support_dir()
         return defaults
 
     @staticmethod
     def _default_data_path() -> str:
-        """获取默认数据存储路径"""
-        # 生产模式：使用 ~/Library/Application Support/DailyRecord/
-        if os.environ.get("DAILYRECORD_RESOURCES_PATH"):
-            app_support = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "DailyRecord")
-            os.makedirs(app_support, exist_ok=True)
-            return app_support
-        # 开发模式：项目目录下的 data/
+        if _is_production():
+            return _app_support_dir()
         return "./data"
 
     @staticmethod
     def _deep_merge(base: dict, override: dict):
-        """深合并字典"""
         for key, value in override.items():
             if key in base and isinstance(base[key], dict) and isinstance(value, dict):
                 Settings._deep_merge(base[key], value)
@@ -80,13 +85,17 @@ class Settings:
                 base[key] = value
 
     def save(self):
-        """保存配置到文件"""
         with open(self._config_path, "w", encoding="utf-8") as f:
             yaml.dump(self._data, f, allow_unicode=True, default_flow_style=False)
+        logger.info(f"配置已保存到 {self._config_path}")
 
     @property
     def reminder_interval(self) -> int:
         return self._data["reminder"]["interval_minutes"]
+
+    @reminder_interval.setter
+    def reminder_interval(self, value: int):
+        self._data["reminder"]["interval_minutes"] = value
 
     @property
     def reminder_enabled(self) -> bool:
@@ -95,18 +104,6 @@ class Settings:
     @property
     def storage_path(self) -> str:
         return self._data["storage"]["path"]
-
-    @property
-    def storage_format(self) -> str:
-        return self._data["storage"]["format"]
-
-    @property
-    def theme(self) -> str:
-        return self._data["appearance"]["theme"]
-
-    @property
-    def language(self) -> str:
-        return self._data["appearance"]["language"]
 
     @property
     def notification_sound(self) -> bool:
