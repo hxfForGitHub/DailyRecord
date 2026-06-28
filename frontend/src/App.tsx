@@ -39,16 +39,18 @@ const App: React.FC = () => {
     const unsubReminder = wsClient.on('reminder', (data) => {
       const msg = (data.message as string) || '时间到啦，记录一下当前在做什么？'
       setReminderMessage(msg)
+      setReminderVisible(true)
 
+      // Electron 模式：额外弹出 macOS 原生通知（可能因签名/权限失败，页面弹窗兜底）
       if (isElectron) {
-        // Electron 模式：弹出 macOS 原生通知
-        window.electronAPI!.showNotification({
-          title: 'DailyRecord',
-          body: msg,
-        })
-      } else {
-        // Web 模式：显示页面内弹窗
-        setReminderVisible(true)
+        try {
+          window.electronAPI!.showNotification({
+            title: 'DailyRecord',
+            body: msg,
+          })
+        } catch (e) {
+          console.error('原生通知失败:', e)
+        }
       }
     })
 
@@ -101,8 +103,8 @@ const App: React.FC = () => {
     >
       <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
         <Content>{renderPage()}</Content>
-        {/* Web 模式提醒弹窗 */}
-        {!isElectron && reminderVisible && currentPage !== 'record' && (
+        {/* 提醒弹窗 */}
+        {reminderVisible && currentPage !== 'record' && (
           <div className="fade-in" style={{
             position: 'fixed',
             top: 20,

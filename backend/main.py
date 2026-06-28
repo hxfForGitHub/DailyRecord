@@ -24,7 +24,13 @@ def broadcast_message(message: dict):
     """向所有连接的 WebSocket 客户端广播消息（线程安全）"""
     loop = _event_loop
     if loop is None or not loop.is_running():
+        logger.warning(f"广播跳过：事件循环不可用")
         return
+
+    if not connected_websockets:
+        logger.warning("广播跳过：没有 WebSocket 客户端连接")
+        return
+
     disconnected = set()
     message_str = json.dumps(message, ensure_ascii=False)
     for ws in list(connected_websockets):
@@ -32,7 +38,10 @@ def broadcast_message(message: dict):
             asyncio.run_coroutine_threadsafe(ws.send_text(message_str), loop)
         except Exception:
             disconnected.add(ws)
-    connected_websockets.difference_update(disconnected)
+
+    if disconnected:
+        connected_websockets.difference_update(disconnected)
+        logger.info(f"已清理 {len(disconnected)} 个断开的 WebSocket")
 
 
 def on_reminder_trigger():
@@ -129,7 +138,10 @@ def update_config(data: ConfigUpdate):
         return {"error": f"配置写入失败: {e}"}
 
     if changed:
-        scheduler.restart()
+        try:
+            scheduler.restart()
+        except Exception as e:
+            logger.error(f"调度器重启失败（配置已保存）: {e}")
 
     return {"message": "配置已更新", "config": settings.to_dict()}
 

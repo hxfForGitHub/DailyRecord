@@ -37,7 +37,7 @@ const Settings: React.FC<SettingsProps> = ({ onBack }) => {
       return data as unknown as ConfigData
     } catch (err) {
       if (retries < 3) {
-        await new Promise((r) => setTimeout(r, 1500))
+        await new Promise((r) => setTimeout(r, 500))
         return loadConfig(retries + 1)
       }
       throw err

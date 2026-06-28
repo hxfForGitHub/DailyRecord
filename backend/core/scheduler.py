@@ -55,13 +55,34 @@ class ReminderScheduler:
             except Exception:
                 pass
             self._scheduler = None
-            print("[Scheduler] 调度器已停止")
+            logger.info("调度器已停止")
 
     def restart(self):
-        """重启调度器（配置变更后调用）"""
-        print("[Scheduler] 重启调度器...")
-        self.stop()
-        self.start()
+        """重启调度器（配置变更后调用，只替换任务，不关闭调度器避免线程冲突）"""
+        logger.info("调度器重新加载任务...")
+        # 移除旧任务
+        if self._job:
+            try:
+                self._job.remove()
+            except Exception:
+                pass
+            self._job = None
+
+        interval = settings.reminder_interval
+        enabled = settings.reminder_enabled
+
+        # 添加新任务（复用已有调度器实例）
+        if enabled and self._callback and self._scheduler and self._scheduler.running:
+            self._job = self._scheduler.add_job(
+                self._callback,
+                IntervalTrigger(minutes=interval),
+                id="reminder",
+                replace_existing=True,
+                misfire_grace_time=120,
+            )
+            logger.info(f"提醒已重启，间隔: {interval} 分钟")
+        else:
+            logger.info("提醒未启用或调度器未运行")
 
     def trigger_now(self) -> bool:
         if self._callback:

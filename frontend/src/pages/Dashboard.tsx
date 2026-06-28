@@ -27,6 +27,7 @@ import {
   ClockCircleOutlined,
   MoreOutlined,
   UnorderedListOutlined,
+  SwapOutlined,
 } from '@ant-design/icons'
 import { TaskAPI, TaskData, RecordAPI, RecordData } from '../api/client'
 
@@ -300,7 +301,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenRecord, onOpenSettings }) =
                                   })),
                                 }}
                               >
-                                <EditOutlined />
+                                <SwapOutlined />
                               </Dropdown>,
                               <EditOutlined key="edit" onClick={() => openEditModal(task)} />,
                               <DeleteOutlined key="delete" onClick={() => handleDelete(task.id)} />,
