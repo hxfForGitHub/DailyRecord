@@ -33,16 +33,28 @@ function getProjectRoot(): string {
 
 function startPythonBackend(): void {
   const root = getProjectRoot()
-  const pythonPath = path.join(root, 'venv', 'bin', 'python3')
-  const mainPy = path.join(root, 'backend', 'main.py')
 
-  console.log(`[Electron] 启动后端: ${pythonPath} ${mainPy}`)
+  if (isDev) {
+    // 开发模式：使用 venv Python 运行源码
+    const pythonPath = path.join(root, 'venv', 'bin', 'python3')
+    console.log(`[Electron] 开发模式启动后端: ${pythonPath} -m backend.main`)
 
-  pythonProcess = spawn(pythonPath, ['-m', 'backend.main'], {
-    cwd: root,
-    env: { ...process.env, PYTHONUNBUFFERED: '1', NO_COLOR: '1' },
-    stdio: ['pipe', 'pipe', 'pipe'],
-  })
+    pythonProcess = spawn(pythonPath, ['-m', 'backend.main'], {
+      cwd: root,
+      env: { ...process.env, PYTHONUNBUFFERED: '1' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+  } else {
+    // 生产模式：使用 PyInstaller 打包的独立二进制
+    const backendBin = path.join(root, 'backend', 'dailyrecord-backend')
+    console.log(`[Electron] 生产模式启动后端: ${backendBin}`)
+
+    pythonProcess = spawn(backendBin, [], {
+      cwd: path.dirname(backendBin),
+      env: { ...process.env },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+  }
 
   pythonProcess.stdout?.on('data', (data: Buffer) => {
     const msg = data.toString().trim()

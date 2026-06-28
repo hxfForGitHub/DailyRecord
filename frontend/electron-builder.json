@@ -15,15 +15,24 @@
     }
   ],
   "mac": {
-    "target": ["dmg"],
-    "icon": null,
-    "category": "public.app-category.productivity"
+    "target": ["dmg", "zip"],
+    "icon": "build/icon.png",
+    "category": "public.app-category.productivity",
+    "hardenedRuntime": true,
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
   },
   "dmg": {
     "title": "DailyRecord",
+    "icon": "build/icon.icns",
+    "background": null,
     "contents": [
       { "x": 130, "y": 220, "type": "file" },
       { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
-    ]
-  }
+    ],
+    "window": {
+      "width": 540,
+      "height": 440
+    }
+  },
+  "afterSign": null
 }
