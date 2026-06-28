@@ -1,0 +1,19 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+data/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/dist-electron/
+frontend/release/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store

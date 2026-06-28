@@ -1,0 +1,29 @@
+{
+  "appId": "com.dailyrecord.app",
+  "productName": "DailyRecord",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "../backend/dist",
+      "to": "backend"
+    }
+  ],
+  "mac": {
+    "target": ["dmg"],
+    "icon": null,
+    "category": "public.app-category.productivity"
+  },
+  "dmg": {
+    "title": "DailyRecord",
+    "contents": [
+      { "x": 130, "y": 220, "type": "file" },
+      { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+    ]
+  }
+}

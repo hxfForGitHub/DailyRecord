@@ -1,0 +1,15 @@
+# DailyRecord 配置文件
+reminder:
+  interval_minutes: 20           # 提醒间隔（分钟）
+  enabled: true                  # 是否启用提醒
+
+storage:
+  path: "./data"                 # 数据存储路径（相对程序运行目录）
+  format: "sqlite"               # 存储格式 (sqlite)
+
+appearance:
+  theme: "auto"                  # 主题 (light/dark/auto)
+  language: "zh-CN"              # 语言
+
+notification:
+  sound: true                    # 提醒是否播放声音
