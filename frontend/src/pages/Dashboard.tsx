@@ -75,7 +75,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenRecord, onOpenSettings }) =
   const [formCategory, setFormCategory] = useState('其他')
   const [formPriority, setFormPriority] = useState<number>(1)
 
-  const fetchData = useCallback(async () => {
+  // 初始加载时静默重试，不立即报错
+  const fetchData = useCallback(async (showError = false) => {
     try {
       const [tasksRes, timelineRes] = await Promise.all([
         TaskAPI.list(),
@@ -85,15 +86,27 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenRecord, onOpenSettings }) =
       setTimeline(timelineRes.timeline)
     } catch (e) {
       console.error('获取数据失败:', e)
-      message.error('无法连接到后端服务')
+      if (showError) {
+        message.error('无法连接到后端服务')
+      }
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    fetchData()
-    const timer = setInterval(fetchData, 30000) // 30 秒刷新一次
+    // 首次加载：静默重试 3 次
+    let retries = 0
+    const tryFetch = () => {
+      fetchData(retries >= 3)
+      retries++
+      if (retries < 3) {
+        setTimeout(tryFetch, 2000)
+      }
+    }
+    tryFetch()
+
+    const timer = setInterval(() => fetchData(false), 30000)
     return () => clearInterval(timer)
   }, [fetchData])
 
