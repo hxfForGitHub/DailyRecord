@@ -152,9 +152,11 @@ function createRecordWindow(data?: { task_name?: string }): void {
   }
 
   recordWindow = new BrowserWindow({
-    width: 640,
-    height: 580,
-    resizable: false,
+    width: 1100,
+    height: 750,
+    resizable: true,
+    minWidth: 800,
+    minHeight: 600,
     title: '记录当前工作',
     titleBarStyle: 'hiddenInset',
     center: true,
@@ -196,8 +198,8 @@ function createReminderPopup(message: string, timestamp: string): void {
   reminderPopup = new BrowserWindow({
     width: 380,
     height: 160,
-    x: screenWidth - 400,
-    y: 50,
+    x: screenWidth - 380,
+    y: 0,
     alwaysOnTop: true,
     frame: false,
     transparent: true,
