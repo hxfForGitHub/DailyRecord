@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from backend.storage.repository import RecordRepository, TaskRepository
+from backend.core.state import set_pending
 
 router = APIRouter(prefix="/api/records", tags=["records"])
 
@@ -74,6 +75,9 @@ def create_record(data: RecordCreate):
             elif current_task.status == "todo":
                 update_data["status"] = "in_progress"
             TaskRepository.update(task_id, **update_data)
+
+    # 清除 pending（用户已响应）
+    set_pending(False)
 
     record = RecordRepository.create(
         task_id=task_id,

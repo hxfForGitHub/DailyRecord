@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.models.task import Base
+from backend.core.logger import logger
 
 _engine = None
 _SessionLocal = None
@@ -25,6 +26,7 @@ def init_db():
     global _engine, _SessionLocal
     data_dir = get_data_dir()
     db_path = os.path.join(data_dir, "dailyrecord.db")
+    logger.info(f"数据库路径: {db_path}")
     _engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     Base.metadata.create_all(_engine)
     _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)

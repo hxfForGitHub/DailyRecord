@@ -68,6 +68,7 @@ class Settings:
         # 生产模式：强制存储路径使用可写目录（config.yaml 中的路径不适用）
         if _is_production():
             defaults["storage"]["path"] = _app_support_dir()
+        logger.info(f"存储路径: {defaults['storage']['path']}")
         return defaults
 
     @staticmethod

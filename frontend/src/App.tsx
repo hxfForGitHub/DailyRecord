@@ -4,6 +4,7 @@ import zhCN from 'antd/locale/zh_CN'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import RecordWindow from './pages/RecordWindow'
+import ReminderPopup from './pages/ReminderPopup'
 import { wsClient } from './api/websocket'
 
 const { Content } = Layout
@@ -38,19 +39,21 @@ const App: React.FC = () => {
 
     const unsubReminder = wsClient.on('reminder', (data) => {
       const msg = (data.message as string) || '时间到啦，记录一下当前在做什么？'
+      const ts = (data.timestamp as string) || ''
       setReminderMessage(msg)
-      setReminderVisible(true)
 
-      // Electron 模式：额外弹出 macOS 原生通知（可能因签名/权限失败，页面弹窗兜底）
       if (isElectron) {
+        // Electron 模式：显示系统级置顶浮动弹窗
+        window.electronAPI?.showReminderPopup({ message: msg, timestamp: ts })
+        // 额外尝试原生通知（失败不影响浮动弹窗）
         try {
-          window.electronAPI!.showNotification({
-            title: 'DailyRecord',
-            body: msg,
-          })
+          window.electronAPI!.showNotification({ title: 'DailyRecord', body: msg })
         } catch (e) {
           console.error('原生通知失败:', e)
         }
+      } else {
+        // Web 模式：显示页面内弹窗
+        setReminderVisible(true)
       }
     })
 
@@ -78,6 +81,8 @@ const App: React.FC = () => {
         return <RecordWindow onClose={handleRecordClose} message={reminderMessage} />
       case 'settings':
         return <Settings onBack={() => navigate('dashboard')} />
+      case 'reminder-popup':
+        return <ReminderPopup />
       case 'dashboard':
       default:
         return (

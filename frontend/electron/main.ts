@@ -8,7 +8,7 @@
  * 4. Python 后端进程管理
  */
 
-import { app, BrowserWindow, ipcMain, Notification, Tray, Menu, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification, Tray, Menu, nativeImage, screen } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import path from 'path'
 
@@ -17,6 +17,7 @@ let recordWindow: BrowserWindow | null = null
 let pythonProcess: ChildProcess | null = null
 let tray: Tray | null = null
 let isQuitting = false
+let reminderPopup: BrowserWindow | null = null
 
 const BACKEND_PORT = 8765
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`
@@ -180,6 +181,59 @@ function createRecordWindow(data?: { task_name?: string }): void {
   })
 }
 
+// ========== 浮动提醒弹窗 ==========
+
+function createReminderPopup(message: string, timestamp: string): void {
+  // 如果已有弹窗，先关闭
+  if (reminderPopup && !reminderPopup.isDestroyed()) {
+    reminderPopup.close()
+    reminderPopup = null
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { width: screenWidth } = primaryDisplay.workAreaSize
+
+  reminderPopup = new BrowserWindow({
+    width: 380,
+    height: 160,
+    x: screenWidth - 400,
+    y: 50,
+    alwaysOnTop: true,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+
+  // 构建 reminder-popup URL，传入消息参数
+  const hashParams = `message=${encodeURIComponent(message)}&ts=${encodeURIComponent(timestamp)}`
+  const url = isDev
+    ? `http://localhost:5173/#/reminder-popup?${hashParams}`
+    : `file://${path.join(__dirname, '..', 'dist', 'index.html')}#/reminder-popup?${hashParams}`
+
+  reminderPopup.loadURL(url)
+
+  reminderPopup.once('ready-to-show', () => {
+    reminderPopup?.show()
+  })
+
+  reminderPopup.on('closed', () => {
+    reminderPopup = null
+  })
+
+  // 点击窗口外部不自动关闭
+  reminderPopup.on('blur', () => {
+    // 保持置顶，不因失焦关闭
+  })
+}
+
 // ========== 菜单栏图标 ==========
 
 function createTray(): void {
@@ -238,6 +292,30 @@ ipcMain.on('open-main-window', () => {
 
 ipcMain.on('minimize-to-tray', () => {
   mainWindow?.hide()
+})
+
+// 浮动提醒弹窗
+ipcMain.on('show-reminder-popup', (_event, data: { message: string; timestamp: string }) => {
+  createReminderPopup(data.message, data.timestamp)
+})
+
+ipcMain.on('reminder-close', () => {
+  if (reminderPopup && !reminderPopup.isDestroyed()) {
+    reminderPopup.close()
+    reminderPopup = null
+  }
+})
+
+ipcMain.on('reminder-fill', () => {
+  createRecordWindow()
+  if (reminderPopup && !reminderPopup.isDestroyed()) {
+    reminderPopup.close()
+    reminderPopup = null
+  }
+})
+
+ipcMain.on('open-record-window-request', () => {
+  createRecordWindow()
 })
 
 // ========== 应用生命周期 ==========

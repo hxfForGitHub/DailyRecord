@@ -13,6 +13,7 @@ from backend.storage.db import init_db, close_db
 from backend.core.scheduler import ReminderScheduler
 from backend.core.config import settings
 from backend.core.logger import logger
+from backend.core.state import is_pending, set_pending
 
 
 scheduler = ReminderScheduler()
@@ -45,13 +46,21 @@ def broadcast_message(message: dict):
 
 
 def on_reminder_trigger():
-    """提醒触发回调"""
-    now = datetime.now().strftime("%H:%M:%S")
-    logger.info(f"提醒触发 [{now}]")
+    """提醒触发回调——自动跳过上一轮未响应 + 广播新提醒"""
+    now = datetime.now()
+
+    # 自动跳过上一轮未响应的提醒
+    if is_pending():
+        from backend.storage.repository import RecordRepository
+        RecordRepository.create(task_name="", status="skipped", note="自动跳过（未响应）")
+        logger.info(f"自动跳过 {now.strftime('%H:%M')} 未响应的提醒")
+    set_pending(True)
+
+    logger.info(f"提醒触发 [{now.strftime('%H:%M:%S')}]")
     broadcast_message({
         "type": "reminder",
         "message": "时间到啦，记录一下当前在做什么？",
-        "timestamp": now,
+        "timestamp": now.strftime("%H:%M:%S"),
     })
 
 
@@ -166,6 +175,7 @@ async def websocket_endpoint(websocket: WebSocket):
             if action == "skip":
                 from backend.storage.repository import RecordRepository
                 RecordRepository.create(task_name="", status="skipped", note="本次跳过")
+                set_pending(False)
                 logger.info("用户选择跳过本次记录")
             elif action == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))

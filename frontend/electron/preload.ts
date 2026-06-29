@@ -14,6 +14,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('show-notification', data)
   },
 
+  // 显示浮动置顶提醒弹窗
+  showReminderPopup: (data: { message: string; timestamp: string }) => {
+    ipcRenderer.send('show-reminder-popup', data)
+  },
+
+  // 关闭提醒弹窗
+  closeReminderPopup: () => {
+    ipcRenderer.send('reminder-close')
+  },
+
+  // 打开记录窗口
+  openRecordWindow: () => {
+    ipcRenderer.send('open-record-window-request')
+  },
+
   // 打开主窗口
   openMainWindow: () => {
     ipcRenderer.send('open-main-window')
