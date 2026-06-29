@@ -104,7 +104,7 @@ class RecordRepository:
             return (
                 db.query(Record)
                 .filter(Record.created_at >= date_str, Record.created_at < date_str + " 23:59:59")
-                .order_by(Record.created_at)
+                .order_by(desc(Record.created_at))
                 .all()
             )
 

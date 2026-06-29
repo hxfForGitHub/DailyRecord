@@ -32,7 +32,28 @@ function getProjectRoot(): string {
   return process.resourcesPath
 }
 
+let _backendStarting = false  // 防止重复启动
+
 function startPythonBackend(): void {
+  // 防重复启动守卫
+  if (_backendStarting) {
+    console.log('[Electron] 后端正在启动中，跳过重复请求')
+    return
+  }
+
+  // 如果已有后端进程在运行，先终止
+  if (pythonProcess && !pythonProcess.killed) {
+    console.log('[Electron] 终止旧后端进程...')
+    pythonProcess.kill('SIGTERM')
+    setTimeout(() => {
+      if (pythonProcess && !pythonProcess.killed) {
+        pythonProcess.kill('SIGKILL')
+      }
+    }, 3000)
+    pythonProcess = null
+  }
+
+  _backendStarting = true
   const root = getProjectRoot()
 
   const env = {
@@ -41,7 +62,6 @@ function startPythonBackend(): void {
   } as NodeJS.ProcessEnv
 
   if (isDev) {
-    // 开发模式：使用 venv Python 运行源码
     const pythonPath = path.join(root, 'venv', 'bin', 'python3')
     console.log(`[Electron] 开发模式启动后端: ${pythonPath} -m backend.main`)
 
@@ -51,17 +71,12 @@ function startPythonBackend(): void {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
   } else {
-    // 生产模式：使用 PyInstaller 打包的独立二进制
-    // resourcePath = /Applications/DailyRecord.app/Contents/Resources
     const backendBin = path.join(root, 'backend', 'dailyrecord-backend')
     const resourcesPath = root
-
-    // 将资源路径和 config.yaml 路径传给后端
     env.DAILYRECORD_RESOURCES_PATH = resourcesPath
     env.DAILYRECORD_CONFIG_PATH = path.join(resourcesPath, 'config.yaml')
 
     console.log(`[Electron] 生产模式启动后端: ${backendBin}`)
-    console.log(`[Electron] 资源路径: ${resourcesPath}`)
 
     pythonProcess = spawn(backendBin, [], {
       cwd: path.dirname(backendBin),
@@ -84,7 +99,7 @@ function startPythonBackend(): void {
 
   pythonProcess.on('error', (err) => {
     console.error(`[Electron] 后端启动失败: ${err.message}`)
-    // 开发模式下不自动重启，方便调试
+    _backendStarting = false
     if (!isDev) {
       setTimeout(startPythonBackend, 5000)
     }
@@ -92,6 +107,13 @@ function startPythonBackend(): void {
 
   pythonProcess.on('exit', (code) => {
     console.log(`[Electron] 后端已退出 (code: ${code})`)
+    _backendStarting = false
+    pythonProcess = null
+  })
+
+  // 进程启动后 — 重置守卫
+  pythonProcess.on('spawn', () => {
+    _backendStarting = false
   })
 }
 
@@ -193,13 +215,11 @@ function createReminderPopup(message: string, timestamp: string): void {
   }
 
   const primaryDisplay = screen.getPrimaryDisplay()
-  const { width: screenWidth } = primaryDisplay.workAreaSize
+  const { x: screenX, width: screenWidth } = primaryDisplay.bounds
 
   reminderPopup = new BrowserWindow({
     width: 380,
-    height: 160,
-    x: screenWidth - 380,
-    y: 0,
+    height: 148,
     alwaysOnTop: true,
     frame: false,
     transparent: true,
@@ -223,6 +243,8 @@ function createReminderPopup(message: string, timestamp: string): void {
   reminderPopup.loadURL(url)
 
   reminderPopup.once('ready-to-show', () => {
+    // 显式定位到屏幕右上角（ready-to-show 之后 setPosition 确保生效）
+    reminderPopup?.setPosition(screenX + screenWidth - 380, 0)
     reminderPopup?.show()
   })
 

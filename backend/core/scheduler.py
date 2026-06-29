@@ -35,7 +35,9 @@ class ReminderScheduler:
                 IntervalTrigger(minutes=interval),
                 id="reminder",
                 replace_existing=True,
-                misfire_grace_time=120,
+                misfire_grace_time=60,
+                coalesce=True,
+                max_instances=1,
             )
             logger.info(f"提醒已启动，间隔: {interval} 分钟")
         else:
@@ -78,7 +80,9 @@ class ReminderScheduler:
                 IntervalTrigger(minutes=interval),
                 id="reminder",
                 replace_existing=True,
-                misfire_grace_time=120,
+                misfire_grace_time=60,
+                coalesce=True,
+                max_instances=1,
             )
             logger.info(f"提醒已重启，间隔: {interval} 分钟")
         else:
